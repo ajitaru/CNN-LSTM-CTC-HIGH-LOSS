@@ -5,6 +5,8 @@ from tensorflow.contrib import rnn
 from tensorflow.contrib import slim
 from tensorflow.contrib.estimator import TowerOptimizer
 
+tf.logging.set_verbosity(tf.logging.INFO)
+
 
 def _reshape_to_rnn_dims(inputs):
     batch_size, height, width, num_channels = inputs.get_shape().as_list()
@@ -18,10 +20,10 @@ def bidirectional_rnn(features, num_hidden, concat_output=True, scope=None):
     with tf.variable_scope(scope, "bidirectional_rnn", [features]):
         cell_fw = rnn.BasicLSTMCell(num_hidden)
         cell_bw = rnn.BasicLSTMCell(num_hidden)
-        outputs = tf.nn.bidirectional_dynamic_rnn(cell_fw,
-                                                  cell_bw,
-                                                  features,
-                                                  dtype=features.dtype)
+        outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw,
+                                                     cell_bw,
+                                                     features,
+                                                     dtype=features.dtype)
         if concat_output:
             return tf.concat(outputs, 2)
         return outputs
