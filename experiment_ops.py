@@ -32,8 +32,12 @@ def bidirectional_rnn(features, num_hidden, concat_output=True, scope=None):
 def _network_fn(features):
     dynamic_input_shape = _get_dynamic_input_shape(features)
     features = tf.reshape(features, dynamic_input_shape, name="reshape_input_layer")
-    features = slim.conv2d(features, 16, [3, 3], stride=1, padding='VALID')
-    features = slim.max_pool2d(features, 2, stride=2, padding='VALID')
+    features = slim.conv2d(features, 32, [3, 3], stride=1, padding='same')
+    features = slim.max_pool2d(features, 2, stride=2, padding='same')
+    features = slim.conv2d(features, 64, [3, 3], stride=1, padding='same')
+    features = slim.max_pool2d(features, 2, stride=2, padding='same')
+    features = slim.conv2d(features, 128, [3, 3], stride=1, padding='same')
+    features = slim.max_pool2d(features, 2, stride=2, padding='same')
     features = _reshape_to_rnn_dims(features)
     features = bidirectional_rnn(features, 32)
     return features
@@ -46,10 +50,11 @@ def _get_dynamic_input_shape(features):
 
 
 def _convert_to_ctc_dims(features, num_classes, num_steps, num_outputs):
-    outputs = tf.reshape(features, [-1, num_outputs])
-    logits = slim.fully_connected(outputs, num_classes,
-                                  weights_initializer=slim.xavier_initializer())
-    logits = tf.reshape(logits, [num_steps, -1, num_classes])
+    with tf.name_scope("ctc_dims", [features]):
+        outputs = tf.reshape(features, [-1, num_outputs])
+        logits = slim.fully_connected(outputs, num_classes,
+                                      weights_initializer=slim.xavier_initializer())
+        logits = tf.reshape(logits, [num_steps, -1, num_classes])
     return logits
 
 
@@ -66,8 +71,8 @@ def _get_decoded_outputs(features, num_classes):
                                     num_outputs=features.shape[-1])
     decoded, _ = tf.nn.ctc_beam_search_decoder(features, _get_sequence_length(features), merge_repeated=True)
     return tf.sparse_to_dense(tf.to_int32(decoded[0].indices),
-                              tf.to_int32(decoded[0].values),
                               tf.to_int32(decoded[0].dense_shape),
+                              tf.to_int32(decoded[0].values),
                               name="output")
 
 
@@ -167,6 +172,6 @@ def predict(features, params, checkpoint_dir):
     estimator = tf.estimator.Estimator(model_fn=_predict_model_fn,
                                        params=params,
                                        model_dir=checkpoint_dir)
-    predictions = estimator.predict(input_fn=_input_fn(features))
+    predictions = estimator.predict(input_fn=_input_fn(features, num_epochs=1))
     for i, p in enumerate(predictions):
         print(i, p)
