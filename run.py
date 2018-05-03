@@ -27,28 +27,30 @@ def _prepare_dataset(charset_file, labels_file, desired_image_size, labels_delim
     return images, labels, num_classes
 
 
-def train_model(learning_rate, checkpoint_dir, num_epochs=1):
+def train_model(learning_rate, checkpoint_dir, num_epochs=1, save_checkpoint_epochs=1):
     run_params = OrderedDict()
     images, labels, num_classes = _prepare_dataset(charset_file="chars.txt",
                                                    labels_file="train.csv",
-                                                   desired_image_size=480)
+                                                   desired_image_size=360)
     run_params["learning_rate"] = learning_rate
     run_params["num_classes"] = num_classes
-    train(run_params, images, labels, num_classes, checkpoint_dir, num_epochs=num_epochs)
+    train(run_params, images, labels, num_classes, checkpoint_dir, num_epochs=num_epochs,
+          save_checkpoint_every_n_epochs=save_checkpoint_epochs)
 
 
 def predict_with_model(checkpoint_dir):
     run_params = OrderedDict()
     images, labels, num_classes = _prepare_dataset(charset_file="chars.txt",
                                                    labels_file="test.csv",
-                                                   desired_image_size=480)
+                                                   desired_image_size=360)
     run_params["num_classes"] = num_classes
-    predict(images, run_params, checkpoint_dir)
+    predict(run_params, images, checkpoint_dir)
 
 
 def main():
     checkpoint_dir = "model-" + time.strftime("%Y%m%d-%H%M%S")
-    train_model(learning_rate=0.001, checkpoint_dir=checkpoint_dir, num_epochs=200)
+    train_model(learning_rate=0.001, checkpoint_dir=checkpoint_dir, num_epochs=1,
+                save_checkpoint_epochs=1)
     predict_with_model(checkpoint_dir)
 
 

@@ -24,10 +24,14 @@ def _set_dynamic_batch_size(inputs):
 
 def _network_fn(features):
     features = _set_dynamic_batch_size(features)
-    features = slim.conv2d(features, 16, [3, 3], stride=1, padding='valid')
-    features = slim.max_pool2d(features, 2, stride=2, padding='valid')
+    features = slim.conv2d(features, 32, [3, 3])
+    features = slim.max_pool2d(features, 2)
+    features = slim.conv2d(features, 64, [3, 3])
+    features = slim.max_pool2d(features, 2)
+    features = slim.conv2d(features, 128, [3, 3])
+    features = slim.max_pool2d(features, 2)
     features = _reshape_to_rnn_dims(features)
-    features = bidirectional_rnn(features, 32)
+    features = bidirectional_rnn(features, 128)
     return features
 
 
@@ -90,8 +94,7 @@ def predict(params, features, checkpoint_dir):
                                        params=params,
                                        model_dir=checkpoint_dir)
     predictions = estimator.predict(input_fn=_input_fn(features, num_epochs=1))
-    for i, p in enumerate(predictions):
-        print(i, p)
+    print(list(predictions))
 
 
 def _input_fn(features, labels=None, batch_size=1, num_epochs=None, shuffle=True):
@@ -129,7 +132,7 @@ def _create_model_fn(mode, predictions, loss=None, train_op=None,
                                       export_outputs=export_outputs)
 
 
-def convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
+def _convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
     outputs = tf.reshape(inputs, [-1, num_outputs])
     logits = slim.fully_connected(outputs, num_classes,
                                   weights_initializer=slim.xavier_initializer())
@@ -140,10 +143,10 @@ def convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
 
 
 def _get_output(inputs, num_classes):
-    inputs = convert_to_ctc_dims(inputs,
-                                         num_classes=num_classes,
-                                         num_steps=inputs.shape[1],
-                                         num_outputs=inputs.shape[-1])
+    inputs = _convert_to_ctc_dims(inputs,
+                                  num_classes=num_classes,
+                                  num_steps=inputs.shape[1],
+                                  num_outputs=inputs.shape[-1])
     decoded, _ = tf.nn.ctc_beam_search_decoder(inputs, _get_sequence_lengths(inputs))
     return _sparse_to_dense(decoded[0], name="output")
 
@@ -156,10 +159,10 @@ def _get_sequence_lengths(inputs):
 
 def _get_metrics(y_pred, y_true, num_classes):
     metrics_dict = {}
-    y_pred = convert_to_ctc_dims(y_pred,
-                                 num_classes=num_classes,
-                                 num_steps=y_pred.shape[1],
-                                 num_outputs=y_pred.shape[-1])
+    y_pred = _convert_to_ctc_dims(y_pred,
+                                  num_classes=num_classes,
+                                  num_steps=y_pred.shape[1],
+                                  num_outputs=y_pred.shape[-1])
     y_pred, _ = tf.nn.ctc_beam_search_decoder(y_pred, _get_sequence_lengths(y_pred))
     y_true = dense_to_sparse(y_true, token_to_ignore=-1)
     value = label_error_rate(y_pred[0], y_true)
@@ -172,11 +175,7 @@ def label_error_rate(y_pred, y_true, name="label_error_rate"):
 
 
 def _predict_model_fn(features, mode, params):
-    features = _network_fn(features)
-    outputs = _get_output(features, params["num_classes"])
-    predictions = {
-        "outputs": outputs
-    }
+    _, predictions = _get_fed_features_and_resulting_predictions(features, params)
 
     return _create_model_fn(mode, predictions=predictions,
                             export_outputs={
@@ -190,7 +189,14 @@ def _train_model_fn(features, labels, mode, params):
     train_op = _create_train_op(loss,
                                 learning_rate=params["learning_rate"])
 
-    training_hooks = []
+    training_hooks = [tf.train.LoggingTensorHook(
+            predictions,
+            every_n_iter=params["log_step_count_steps"]),
+        tf.train.LoggingTensorHook(
+            {"labels": _sparse_to_dense(dense_to_sparse(labels, token_to_ignore=-1))},
+            every_n_iter=params["log_step_count_steps"]
+        )
+    ]
     for metric_key in metrics:
         _add_to_summary(metric_key, metrics[metric_key])
         training_hooks.append(tf.train.LoggingTensorHook(
@@ -214,10 +220,10 @@ def _get_evaluation_parameters(features, labels, params):
 
 
 def _get_loss(labels, inputs, num_classes):
-    inputs = convert_to_ctc_dims(inputs,
-                                         num_classes=num_classes,
-                                         num_steps=inputs.shape[1],
-                                         num_outputs=inputs.shape[-1])
+    inputs = _convert_to_ctc_dims(inputs,
+                                  num_classes=num_classes,
+                                  num_steps=inputs.shape[1],
+                                  num_outputs=inputs.shape[-1])
     labels = dense_to_sparse(labels, token_to_ignore=-1)
     return tf.reduce_mean(tf.nn.ctc_loss(labels, inputs, _get_sequence_lengths(inputs),
                                          preprocess_collapse_repeated=False,
