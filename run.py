@@ -34,7 +34,7 @@ def train_model(learning_rate, checkpoint_dir, num_epochs=1):
                                                    desired_image_size=480)
     run_params["learning_rate"] = learning_rate
     run_params["num_classes"] = num_classes
-    train(images, labels, num_classes, run_params, checkpoint_dir, num_epochs=num_epochs)
+    train(run_params, images, labels, num_classes, checkpoint_dir, num_epochs=num_epochs)
 
 
 def predict_with_model(checkpoint_dir):
