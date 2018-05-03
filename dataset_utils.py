@@ -65,36 +65,19 @@ def resize(images, desired_height=None, desired_width=None):
     print("Done resizing images.")
     return resized_images
 
-
 def _resize(image, desired_height=None, desired_width=None):
     dim = (desired_width, desired_height)
     if dim is (None, None):
         return image
     raw_height, raw_width, num_channels = image.shape
-    ratio = float(desired_width)/max(raw_height, raw_width)
-
-    scaled_width = int(raw_width * ratio)
-    scaled_height = int(raw_height * ratio)
-    resized_image = cv2.resize(image, (scaled_width, scaled_height))
-
-    square_image = _add_padding(desired_height, desired_width, resized_image, scaled_height, scaled_width)
-    return np.array(square_image).astype(np.uint8)
-
-
-def _add_padding(desired_height, desired_width, image, scaled_height, scaled_width):
-    delta_width = desired_width - scaled_width
-    delta_height = desired_height - scaled_height
-    top, bottom = delta_height // 2, delta_height - (delta_height // 2)
-    left, right = delta_width // 2, delta_width - (delta_width // 2)
-    color = [255, 255, 255]
-    square_image = cv2.copyMakeBorder(image,
-                                      top,
-                                      bottom,
-                                      left,
-                                      right,
-                                      cv2.BORDER_CONSTANT,
-                                      value=color)
-    return square_image
+    scaled_width = int(raw_width * (desired_height / raw_height))
+    scaled_width_image = cv2.resize(image, (scaled_width, desired_height))
+    scaled_width_image_array = np.array(scaled_width_image).astype(np.uint8)
+    scaled_image = scaled_width_image_array.reshape(desired_height, scaled_width)
+    padding = np.full((desired_height, desired_width - scaled_width + 1), 255)
+    padded_image = np.concatenate((scaled_image, padding), axis=1)
+    padded_image = padded_image[:, 0:desired_width]
+    return np.array(padded_image).astype(np.uint8)
 
 
 def get_characters_from(charset_file):

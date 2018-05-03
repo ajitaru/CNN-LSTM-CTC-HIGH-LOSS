@@ -24,13 +24,26 @@ def _set_dynamic_batch_size(inputs):
 
 def _network_fn(features):
     features = _set_dynamic_batch_size(features)
+    features = slim.conv2d(features, 16, [3, 3])
+    features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 16)
     features = slim.conv2d(features, 32, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 32)
     features = slim.conv2d(features, 64, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 64)
     features = slim.conv2d(features, 128, [3, 3])
+    features = mdrnn(features, 128)
     features = slim.max_pool2d(features, 2)
+    features = slim.conv2d(features, 256, [3, 3])
+    features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 256)
     features = _reshape_to_rnn_dims(features)
+    features = bidirectional_rnn(features, 128)
+    features = bidirectional_rnn(features, 128)
+    features = bidirectional_rnn(features, 128)
+    features = bidirectional_rnn(features, 128)
     features = bidirectional_rnn(features, 128)
     return features
 
@@ -50,8 +63,8 @@ def _reshape_to_rnn_dims(inputs):
 def bidirectional_rnn(inputs, num_hidden, concat_output=True,
                       scope=None):
     with tf.variable_scope(scope, "bidirectional_rnn", [inputs]):
-        cell_fw = rnn.LSTMCell(num_hidden, initializer=slim.xavier_initializer(), activation=tf.nn.tanh)
-        cell_bw = rnn.LSTMCell(num_hidden, initializer=slim.xavier_initializer(), activation=tf.nn.tanh)
+        cell_fw = rnn.LSTMCell(num_hidden)
+        cell_bw = rnn.LSTMCell(num_hidden)
         outputs, _ = tf.nn.bidirectional_dynamic_rnn(cell_fw,
                                                      cell_bw,
                                                      inputs,
@@ -59,6 +72,86 @@ def bidirectional_rnn(inputs, num_hidden, concat_output=True,
         if concat_output:
             return tf.concat(outputs, 2)
         return outputs
+
+
+def mdrnn(inputs, num_hidden, kernel_size=None, scope=None):
+    if kernel_size is not None:
+        inputs = _get_blocks(inputs, kernel_size)
+    with tf.variable_scope(scope, "multidimensional_rnn", [inputs]):
+        hidden_sequence_horizontal = _bidirectional_rnn_scan(inputs,
+                                                             num_hidden // 2)
+        with tf.variable_scope("vertical"):
+            transposed = tf.transpose(hidden_sequence_horizontal, [0, 2, 1, 3])
+            output_transposed = _bidirectional_rnn_scan(transposed, num_hidden // 2)
+        output = tf.transpose(output_transposed, [0, 2, 1, 3])
+        return output
+
+
+def _get_blocks(inputs, kernel_size):
+    if isinstance(kernel_size, int):
+        kernel_size = [kernel_size, kernel_size]
+    with tf.variable_scope("image_blocks"):
+        batch_size, height, width, channels = _get_shape_as_list(inputs)
+        if batch_size is None:
+            batch_size = -1
+
+        if height % kernel_size[0] != 0:
+            offset = tf.fill([tf.shape(inputs)[0],
+                              kernel_size[0] - (height % kernel_size[0]),
+                              width,
+                              channels], 0.0)
+            inputs = tf.concat([inputs, offset], 1)
+            _, height, width, channels = _get_shape_as_list(inputs)
+        if width % kernel_size[1] != 0:
+            offset = tf.fill([tf.shape(inputs)[0],
+                              height,
+                              kernel_size[1] - (width % kernel_size[1]),
+                              channels], 0.0)
+            inputs = tf.concat([inputs, offset], 2)
+            _, height, width, channels = _get_shape_as_list(inputs)
+
+        h, w = int(height / kernel_size[0]), int(width / kernel_size[1])
+        features = kernel_size[1] * kernel_size[0] * channels
+
+        lines = tf.split(inputs, h, axis=1)
+        line_blocks = []
+        for line in lines:
+            line = tf.transpose(line, [0, 2, 3, 1])
+            line = tf.reshape(line, [batch_size, w, features])
+            line_blocks.append(line)
+
+        return tf.stack(line_blocks, axis=1)
+
+
+def images_to_sequence(inputs):
+    _, _, width, num_channels = _get_shape_as_list(inputs)
+    s = tf.shape(inputs)
+    batch_size, height = s[0], s[1]
+    return tf.reshape(inputs, [batch_size * height, width, num_channels])
+
+
+def _get_shape_as_list(tensor):
+    return tensor.get_shape().as_list()
+
+
+def sequence_to_images(tensor, height):
+    num_batches, width, depth = tensor.get_shape().as_list()
+    if num_batches is None:
+        num_batches = -1
+    else:
+        num_batches = num_batches // height
+    reshaped = tf.reshape(tensor,
+                          [num_batches, width, height, depth])
+    return tf.transpose(reshaped, [0, 2, 1, 3])
+
+
+def _bidirectional_rnn_scan(inputs, num_hidden):
+    with tf.variable_scope("BidirectionalRNN", [inputs]):
+        height = inputs.get_shape().as_list()[1]
+        inputs = images_to_sequence(inputs)
+        output_sequence = bidirectional_rnn(inputs, num_hidden)
+        output = sequence_to_images(output_sequence, height)
+        return output
 
 
 def _sparse_to_dense(sparse_tensor, name="sparse_to_dense"):
@@ -134,10 +227,8 @@ def _create_model_fn(mode, predictions, loss=None, train_op=None,
 
 def _convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
     outputs = tf.reshape(inputs, [-1, num_outputs])
-    logits = slim.fully_connected(outputs, num_classes,
-                                  weights_initializer=slim.xavier_initializer())
-    logits = slim.fully_connected(logits, num_classes,
-                                  weights_initializer=slim.xavier_initializer())
+    logits = slim.fully_connected(outputs, num_classes)
+    logits = slim.fully_connected(logits, num_classes)
     logits = tf.reshape(logits, [num_steps, -1, num_classes])
     return logits
 
