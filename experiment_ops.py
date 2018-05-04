@@ -26,14 +26,19 @@ def _network_fn(features):
     features = _set_dynamic_batch_size(features)
     features = slim.conv2d(features, 16, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 16)
     features = slim.conv2d(features, 32, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 32)
     features = slim.conv2d(features, 64, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 64)
     features = slim.conv2d(features, 128, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 128)
     features = slim.conv2d(features, 256, [3, 3])
     features = slim.max_pool2d(features, 2)
+    features = mdrnn(features, 256)
     features = _reshape_to_rnn_dims(features)
     features = bidirectional_rnn(features, 128)
     features = bidirectional_rnn(features, 128)
@@ -222,7 +227,8 @@ def _create_model_fn(mode, predictions, loss=None, train_op=None,
 def _convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
     outputs = tf.reshape(inputs, [-1, num_outputs])
     logits = slim.fully_connected(outputs, num_classes)
-    logits = tf.reshape(logits, [num_steps, -1, num_classes])
+    logits = tf.reshape(logits, [-1, num_steps, num_classes])
+    logits = tf.transpose(logits, (1, 0, 2))
     return logits
 
 
