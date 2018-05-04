@@ -26,19 +26,14 @@ def _network_fn(features):
     features = _set_dynamic_batch_size(features)
     features = slim.conv2d(features, 16, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 16)
     features = slim.conv2d(features, 32, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 32)
     features = slim.conv2d(features, 64, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 64)
     features = slim.conv2d(features, 128, [3, 3])
-    features = mdrnn(features, 128)
     features = slim.max_pool2d(features, 2)
     features = slim.conv2d(features, 256, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 256)
     features = _reshape_to_rnn_dims(features)
     features = bidirectional_rnn(features, 128)
     features = bidirectional_rnn(features, 128)
@@ -52,12 +47,11 @@ def _reshape_to_rnn_dims(inputs):
     batch_size, height, width, num_channels = inputs.get_shape().as_list()
     if batch_size is None:
         batch_size = -1
-    time_major_inputs = tf.transpose(inputs, (2, 0, 1, 3))
-    reshaped_time_major_inputs = tf.reshape(time_major_inputs,
-                                            [width, batch_size, height * num_channels]
-                                            )
-    batch_major_inputs = tf.transpose(reshaped_time_major_inputs, (1, 0, 2))
-    return batch_major_inputs
+    nwhc_cnn_outputs = tf.transpose(inputs, (0, 2, 1, 3))
+    batch_major_rnn_inputs = tf.reshape(nwhc_cnn_outputs,
+                                        [batch_size, width, height * num_channels]
+                                        )
+    return batch_major_rnn_inputs
 
 
 def bidirectional_rnn(inputs, num_hidden, concat_output=True,
@@ -228,7 +222,6 @@ def _create_model_fn(mode, predictions, loss=None, train_op=None,
 def _convert_to_ctc_dims(inputs, num_classes, num_steps, num_outputs):
     outputs = tf.reshape(inputs, [-1, num_outputs])
     logits = slim.fully_connected(outputs, num_classes)
-    logits = slim.fully_connected(logits, num_classes)
     logits = tf.reshape(logits, [num_steps, -1, num_classes])
     return logits
 
@@ -281,8 +274,8 @@ def _train_model_fn(features, labels, mode, params):
                                 learning_rate=params["learning_rate"])
 
     training_hooks = [tf.train.LoggingTensorHook(
-            predictions,
-            every_n_iter=params["log_step_count_steps"]),
+        predictions,
+        every_n_iter=params["log_step_count_steps"]),
         tf.train.LoggingTensorHook(
             {"labels": _sparse_to_dense(dense_to_sparse(labels, token_to_ignore=-1))},
             every_n_iter=params["log_step_count_steps"]
