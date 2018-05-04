@@ -26,24 +26,15 @@ def _network_fn(features):
     features = _set_dynamic_batch_size(features)
     features = slim.conv2d(features, 16, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 16)
     features = slim.conv2d(features, 32, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 32)
     features = slim.conv2d(features, 64, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 64)
     features = slim.conv2d(features, 128, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 128)
     features = slim.conv2d(features, 256, [3, 3])
     features = slim.max_pool2d(features, 2)
-    features = mdrnn(features, 256)
     features = _reshape_to_rnn_dims(features)
-    features = bidirectional_rnn(features, 128)
-    features = bidirectional_rnn(features, 128)
-    features = bidirectional_rnn(features, 128)
-    features = bidirectional_rnn(features, 128)
     features = bidirectional_rnn(features, 128)
     return features
 
@@ -206,7 +197,7 @@ def _add_to_summary(name, value):
 
 
 def _create_train_op(loss, learning_rate):
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate)
+    optimizer = tf.train.RMSPropOptimizer(learning_rate=learning_rate, decay=0.9)
     optimizer = TowerOptimizer(optimizer)
     return slim.learning.create_train_op(loss, optimizer, global_step=tf.train.get_or_create_global_step())
 
